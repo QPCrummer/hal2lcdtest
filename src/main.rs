@@ -4,10 +4,10 @@
 #![no_std]
 #![no_main]
 
+use core::time::Duration;
 use bsp::entry;
 use defmt::*;
 use defmt_rtt as _;
-use embedded_hal::digital::v2::OutputPin;
 use lcd1602_rs::LCD1602;
 use panic_probe as _;
 
@@ -17,11 +17,18 @@ use rp_pico as bsp;
 // use sparkfun_pro_micro_rp2040 as bsp;
 
 use bsp::hal::{
-    clocks::{init_clocks_and_plls, Clock},
+    clocks::{init_clocks_and_plls},
     pac,
     sio::Sio,
     watchdog::Watchdog,
 };
+use cortex_m::delay::Delay;
+use cortex_m::peripheral::syst::SystClkSource;
+use embedded_hal::timer::{Cancel, CountDown, Periodic};
+use rp_pico::hal;
+use nb;
+use rp_pico::hal::Clock;
+use void::Void;
 
 #[entry]
 fn main() -> ! {
@@ -45,7 +52,8 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+    let delay = Delay::new(core.SYST, 133000000);
+    let timer: Timer = Timer::new(delay);
 
     let pins = bsp::Pins::new(
         pac.IO_BANK0,
@@ -53,6 +61,14 @@ fn main() -> ! {
         sio.gpio_bank0,
         &mut pac.RESETS,
     );
+
+    // Init pins
+    let rs = pins.gpio0.into_push_pull_output();
+    let en = pins.gpio1.into_push_pull_output();
+    let d4 = pins.gpio2.into_push_pull_output();
+    let d5 = pins.gpio3.into_push_pull_output();
+    let d6 = pins.gpio4.into_push_pull_output();
+    let d7 = pins.gpio5.into_push_pull_output();
 
     // This is the correct pin on the Raspberry Pico board. On other boards, even if they have an
     // on-board LED, it might need to be changed.
@@ -63,22 +79,57 @@ fn main() -> ! {
     // If you have a Pico W and want to toggle a LED with a simple GPIO output pin, you can connect an external
     // LED to one of the GPIO pins, and reference that pin here. Don't forget adding an appropriate resistor
     // in series with the LED.
-    let mut lcd = LCD1602::new(
-        pins.gpio1.into_function(),
-        pins.gpio0.into_function(),
-        pins.gpio2.into_function(),
-        pins.gpio3.into_function(),
-        pins.gpio4.into_function(),
-        pins.gpio5.into_function(),
-        delay,
-    )
-    .unwrap();
+    let mut lcd = LCD1602::new(en, rs, d4, d5, d6, d7, timer).unwrap();
 
     loop {
         lcd.print("hello world!").ok();
-        lcd.delay(1_000_000 as u64).ok();
+        lcd.delay(1_000_000u64).ok();
         lcd.clear().ok();
-        lcd.delay(1_000_000 as u64).ok();
+        lcd.delay(1_000_000u64).ok();
+    }
+}
+
+/// A simple Timer struct
+pub struct Timer {
+    duration: Duration,
+    periodic: bool,
+    delay: Delay,
+}
+
+impl Timer {
+    /// Creates a new Timer
+    pub fn new(delay: Delay) -> Self {
+        Timer {
+            duration: Duration::from_secs(0),
+            periodic: false,
+            delay,
+        }
+    }
+}
+
+impl CountDown for Timer {
+    type Time = Duration;
+
+    fn start<T>(&mut self, count: T)
+    where
+        T: Into<Self::Time>,
+    {
+        self.duration = count.into();
+    }
+
+    fn wait(&mut self) -> nb::Result<(), Void> {
+        self.delay.delay_us(self.duration.as_micros() as u32);
+        Ok(())
+    }
+}
+
+impl Periodic for Timer {}
+
+impl Cancel for Timer {
+    type Error = &'static str;
+
+    fn cancel(&mut self) -> Result<(), Self::Error> {
+      Ok(())
     }
 }
 

@@ -17,6 +17,8 @@ lcd1602-rs = { git = "https://github.com/levpaul/lcd1602-rs" }
 
 # We're using a Pico by default on this template
 rp-pico = "0.8"
+nb = {version = "1.1.0", default-features = false}
+void = {version = "1.0.2", default-features = false}
 
 # but you can use any BSP. Uncomment this to use the pro_micro_rp2040 BSP instead
 # sparkfun-pro-micro-rp2040 = "0.6"
